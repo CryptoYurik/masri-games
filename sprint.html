@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>⚡ Спринт — Masri</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #f6f7fb);
+    --surface: var(--tg-theme-secondary-bg-color, #ffffff);
+    --text: var(--tg-theme-text-color, #1a1d29);
+    --muted: var(--tg-theme-hint-color, #7b8194);
+    --faience: #1f4fd6;      /* египетская синь — главный акцент */
+    --gold: #d99a14;         /* множитель серии */
+    --yes: #1f9d63;
+    --no: #d8443a;
+    --radius: 22px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.tg) { --bg:#15171f; --surface:#1f2230; --text:#eef0f6; --muted:#8a90a3; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Rubik", system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top, 0) 16px calc(env(safe-area-inset-bottom, 0) + 16px);
+    user-select: none; overflow: hidden;
+  }
+  .screen { display: none; flex: 1; flex-direction: column; min-height: 0; }
+  .screen.on { display: flex; }
+  button { font: inherit; border: 0; cursor: pointer; }
+  button:focus-visible { outline: 3px solid var(--faience); outline-offset: 3px; }
+
+  /* ---------- Старт ---------- */
+  #start { justify-content: center; align-items: center; text-align: center; gap: 10px; }
+  .big-ar { font-family: "Amiri", "Noto Naskh Arabic", serif; direction: rtl; line-height: 1.35; }
+  #start .big-ar { font-size: 72px; color: var(--faience); margin: 0; }
+  #start h1 { font-size: 28px; margin: 0; font-weight: 700; }
+  #start p { color: var(--muted); max-width: 32ch; line-height: 1.5; margin: 4px 0 18px; }
+  .rules { display: flex; gap: 22px; color: var(--muted); font-size: 14px; margin-bottom: 26px; }
+  .rules b { display: block; font-size: 22px; color: var(--text); }
+  .primary {
+    background: var(--faience); color: #fff; font-weight: 500; font-size: 18px;
+    padding: 16px 44px; border-radius: 999px;
+  }
+  .primary:active { transform: scale(.97); }
+  #loadmsg { color: var(--muted); font-size: 14px; min-height: 1.2em; }
+
+  /* ---------- Игра ---------- */
+  #game { padding-top: 14px; }
+  .bar { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--muted) 25%, transparent); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 100%; background: var(--faience); transform-origin: left; }
+  .bar.low i { background: var(--no); }
+  .hud { display: flex; justify-content: space-between; align-items: baseline; margin: 12px 2px 0; }
+  .score { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .time { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .mult {
+    font-weight: 700; color: var(--gold); font-size: 20px; min-width: 3ch; text-align: right;
+    transition: transform .15s;
+  }
+  .mult.bump { transform: scale(1.35); }
+  .dots { display: flex; gap: 5px; justify-content: flex-end; margin-top: 2px; }
+  .dots span { width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--gold) 25%, transparent); }
+  .dots span.f { background: var(--gold); }
+
+  .stage { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  .card {
+    width: 100%; background: var(--surface); border-radius: var(--radius);
+    padding: 30px 22px 26px; text-align: center; position: relative;
+    border: 2px solid transparent; touch-action: pan-y;
+    transition: transform .18s ease, border-color .15s;
+  }
+  .card.dragging { transition: none; }
+  .card.ok { border-color: var(--yes); }
+  .card.bad { border-color: var(--no); animation: shake .32s; }
+  @keyframes shake { 25%{transform:translateX(-8px)} 50%{transform:translateX(7px)} 75%{transform:translateX(-4px)} }
+  .card .big-ar { font-size: clamp(40px, 13vw, 64px); margin: 0; word-break: break-word; }
+  .translit { color: var(--muted); margin: 4px 0 18px; font-size: 16px; }
+  .eq { width: 36px; height: 2px; background: color-mix(in srgb, var(--muted) 40%, transparent); margin: 0 auto 18px; }
+  .ru { font-size: 22px; font-weight: 500; line-height: 1.35; }
+  .fix { margin-top: 12px; font-size: 15px; color: var(--no); min-height: 1.3em; }
+  .hint { position: absolute; top: 14px; font-size: 13px; font-weight: 700; opacity: 0; transition: opacity .1s; }
+  .hint.l { left: 16px; color: var(--no); } .hint.r { right: 16px; color: var(--yes); }
+
+  .answers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .answers button {
+    padding: 20px 0; border-radius: 18px; font-size: 18px; font-weight: 700; color: #fff;
+  }
+  .answers button:active { transform: scale(.97); }
+  #btnNo { background: var(--no); } #btnYes { background: var(--yes); }
+  .swipe-tip { text-align: center; color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+
+  /* ---------- Итог ---------- */
+  #result { padding-top: 22px; overflow-y: auto; }
+  #result h2 { margin: 0; font-size: 18px; font-weight: 500; color: var(--muted); }
+  .final { font-size: 64px; font-weight: 700; line-height: 1.1; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+  .record { color: var(--gold); font-weight: 700; min-height: 1.4em; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0 24px; }
+  .stats div { background: var(--surface); border-radius: 16px; padding: 12px; }
+  .stats b { display: block; font-size: 22px; }
+  .stats small { color: var(--muted); }
+  #result h3 { font-size: 16px; margin: 0 0 10px; }
+  .mistake { background: var(--surface); border-radius: 16px; padding: 12px 16px; margin-bottom: 8px; }
+  .mistake .big-ar { font-size: 28px; text-align: right; }
+  .mistake .tr { color: var(--muted); font-size: 14px; }
+  .mistake .ok { font-weight: 500; margin-top: 2px; }
+  .empty { color: var(--muted); }
+  .row { display: flex; gap: 10px; margin: 18px 0 8px; }
+  .row button { flex: 1; }
+  .ghost { background: var(--surface); color: var(--text); padding: 16px; border-radius: 999px; font-weight: 500; }
+  .note { color: var(--muted); font-size: 13px; text-align: center; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card, .mult { transition: none; } .card.bad { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<section id="start" class="screen on">
+  <p class="big-ar" aria-hidden="true">يلا</p>
+  <h1>Спринт</h1>
+  <p>Перевод верный или нет? Отвечай быстро: серия правильных ответов умножает очки.</p>
+  <div class="rules">
+    <div><b>60</b>секунд</div>
+    <div><b>×4</b>максимум</div>
+    <div><b id="poolSize">…</b>слов</div>
+  </div>
+  <button class="primary" id="btnStart" disabled>Начать</button>
+  <div id="loadmsg">Загружаю слова…</div>
+</section>
+
+<section id="game" class="screen" aria-live="polite">
+  <div class="bar" id="bar"><i id="barFill"></i></div>
+  <div class="hud">
+    <div>
+      <div class="score" id="score">0</div>
+      <div class="time" id="time">60 с</div>
+    </div>
+    <div>
+      <div class="mult" id="mult">×1</div>
+      <div class="dots" id="dots"><span></span><span></span><span></span><span></span></div>
+    </div>
+  </div>
+  <div class="stage">
+    <div class="card" id="card">
+      <span class="hint l" id="hintL">Неверно</span>
+      <span class="hint r" id="hintR">Верно</span>
+      <p class="big-ar" id="qAr"></p>
+      <div class="translit" id="qTr"></div>
+      <div class="eq"></div>
+      <div class="ru" id="qRu"></div>
+      <div class="fix" id="qFix"></div>
+    </div>
+  </div>
+  <div class="answers">
+    <button id="btnNo">✗ Неверно</button>
+    <button id="btnYes">✓ Верно</button>
+  </div>
+  <p class="swipe-tip">Можно смахивать карточку влево или вправо</p>
+</section>
+
+<section id="result" class="screen">
+  <h2>Очки за раунд</h2>
+  <div class="final" id="rScore">0</div>
+  <div class="record" id="rRecord"></div>
+  <div class="stats">
+    <div><b id="rOk">0</b><small>верно</small></div>
+    <div><b id="rBad">0</b><small>ошибок</small></div>
+    <div><b id="rStreak">0</b><small>лучшая серия</small></div>
+  </div>
+  <h3>Работа над ошибками</h3>
+  <div id="rList"></div>
+  <div class="row">
+    <button class="primary" id="btnAgain">Ещё раунд</button>
+  </div>
+  <p class="note" id="rNote"></p>
+</section>
+
+<script>
+(() => {
+  const ROUND_SECONDS = 60;
+  const STEP = 4;          // каждые 4 верных подряд множитель +1
+  const MAX_MULT = 4;
+  const tg = window.Telegram && Telegram.WebApp;
+  const inTelegram = !!(tg && tg.initData);
+
+  if (tg) {
+    document.documentElement.classList.add("tg");
+    tg.ready(); tg.expand();
+    try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
+  }
+  const haptic = (type) => { try { tg.HapticFeedback.notificationOccurred(type); } catch (e) {} };
+  const $ = (id) => document.getElementById(id);
+  const show = (id) => document.querySelectorAll(".screen").forEach(s => s.classList.toggle("on", s.id === id));
+
+  // ---------- Данные ----------
+  // строка words.json: [индекс, арабский, транслит, перевод, категория, сложность]
+  let pool = [], byCat = {}, transByArabic = {};
+  const normAr = (s) => s.replace(/[\u064B-\u0652\u0670\u0640\s]/g, "");
+  const normRu = (s) => s.trim().toLowerCase();
+
+  const params = new URLSearchParams(location.search);
+  const level = params.get("d") || "все";
+
+  fetch("words.json?v=" + Date.now())
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(all => {
+      pool = level === "все" ? all : all.filter(w => w[5] === level);
+      if (pool.length < 20) pool = all;            // слишком мало слов на уровне — берём все
+      for (const w of all) {
+        const k = normAr(w[1]);
+        (transByArabic[k] ||= new Set()).add(normRu(w[3]));
+      }
+      for (const w of pool) (byCat[w[4]] ||= []).push(w);
+      $("poolSize").textContent = pool.length;
+      $("loadmsg").textContent = level === "все" ? "" : "Уровень: " + level;
+      $("btnStart").disabled = false;
+    })
+    .catch(() => { $("loadmsg").textContent = "Не удалось загрузить слова. Закрой игру и открой снова."; });
+
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  // Неверный перевод: из той же категории, и точно не является переводом этого же арабского слова
+  function distractor(w) {
+    const bad = transByArabic[normAr(w[1])];
+    const ok = (x) => !bad.has(normRu(x[3]));
+    let cand = (byCat[w[4]] || []).filter(ok);
+    if (cand.length < 2) cand = pool.filter(ok);
+    return pick(cand)[3];
+  }
+
+  // ---------- Сессия (все раунды до сохранения) ----------
+  const session = { rounds: 0, correct: 0, wrong: 0, best: 0, mistakes: [] };
+  let bestLocal = 0;
+  try { bestLocal = +localStorage.getItem("sprint_best") || 0; } catch (e) {}
+
+  // ---------- Раунд ----------
+  let st, q, locked, timerId, endAt;
+
+  function startRound() {
+    st = { score: 0, ok: 0, bad: 0, streak: 0, bestStreak: 0, mistakes: [] };
+    q = null; locked = false;
+    renderHud(false);
+    show("game");
+    nextQuestion();
+    endAt = performance.now() + ROUND_SECONDS * 1000;
+    cancelAnimationFrame(timerId);
+    tick();
+    if (tg) { tg.MainButton.hide(); try { tg.enableClosingConfirmation(); } catch (e) {} }
+  }
+
+  function tick() {
+    const left = Math.max(0, endAt - performance.now());
+    $("barFill").style.transform = `scaleX(${left / (ROUND_SECONDS * 1000)})`;
+    $("bar").classList.toggle("low", left < 10000);
+    $("time").textContent = Math.ceil(left / 1000) + " с";
+    if (left <= 0) return finishRound();
+    timerId = requestAnimationFrame(tick);
+  }
+
+  function nextQuestion() {
+    let w;
+    do { w = pick(pool); } while (pool.length > 1 && q && w[0] === q.w[0]);
+    const truth = Math.random() < 0.5;
+    q = { w, truth, shown: truth ? w[3] : distractor(w) };
+    const card = $("card");
+    card.classList.remove("ok", "bad");
+    card.style.transform = "";
+    $("qAr").textContent = w[1];
+    $("qTr").textContent = w[2];
+    $("qRu").textContent = q.shown;
+    $("qFix").textContent = "";
+    locked = false;
+  }
+
+  const mult = () => Math.min(MAX_MULT, 1 + Math.floor(st.streak / STEP));
+
+  function answer(saysTrue) {
+    if (locked || !q) return;
+    locked = true;
+    const card = $("card");
+    if (saysTrue === q.truth) {
+      const before = mult();
+      st.streak++; st.ok++;
+      st.bestStreak = Math.max(st.bestStreak, st.streak);
+      st.score += 10 * before;
+      card.classList.add("ok");
+      haptic("success");
+      renderHud(mult() > before);
+      setTimeout(nextQuestion, 160);
+    } else {
+      st.streak = 0; st.bad++;
+      if (!st.mistakes.some(m => m[0] === q.w[0])) st.mistakes.push(q.w);
+      card.classList.add("bad");
+      $("qFix").textContent = q.truth ? "Это был верный перевод" : "Правильно: " + q.w[3];
+      haptic("error");
+      renderHud(false);
+      setTimeout(nextQuestion, 900);   // даём прочитать правильный ответ
+    }
+  }
+
+  function renderHud(bump) {
+    $("score").textContent = st.score;
+    const m = mult();
+    const el = $("mult");
+    el.textContent = "×" + m;
+    if (bump) { el.classList.add("bump"); setTimeout(() => el.classList.remove("bump"), 160); }
+    const filled = m === MAX_MULT ? STEP : st.streak % STEP;
+    [...$("dots").children].forEach((d, i) => d.classList.toggle("f", i < filled));
+  }
+
+  function finishRound() {
+    locked = true; q = null;
+    session.rounds++;
+    session.correct += st.ok;
+    session.wrong += st.bad;
+    session.best = Math.max(session.best, st.score);
+    for (const w of st.mistakes)
+      if (!session.mistakes.includes(w[0])) session.mistakes.push(w[0]);
+
+    const isRecord = st.score > bestLocal && st.score > 0;
+    if (isRecord) { bestLocal = st.score; try { localStorage.setItem("sprint_best", st.score); } catch (e) {} }
+
+    $("rScore").textContent = st.score;
+    $("rRecord").textContent = isRecord ? "Новый рекорд!" : (bestLocal ? "Рекорд: " + bestLocal : "");
+    $("rOk").textContent = st.ok;
+    $("rBad").textContent = st.bad;
+    $("rStreak").textContent = st.bestStreak;
+
+    const list = $("rList");
+    list.innerHTML = "";
+    if (!st.mistakes.length) {
+      list.innerHTML = '<p class="empty">Ни одной ошибки — مُمتَاز!</p>';
+    } else {
+      for (const w of st.mistakes) {
+        const d = document.createElement("div");
+        d.className = "mistake";
+        d.innerHTML = '<div class="big-ar"></div><div class="tr"></div><div class="ok"></div>';
+        d.children[0].textContent = w[1];
+        d.children[1].textContent = w[2];
+        d.children[2].textContent = w[3];
+        list.appendChild(d);
+      }
+    }
+
+    if (inTelegram) {
+      $("rNote").textContent = "Нажми «Сохранить результат», чтобы получить XP. Слова с ошибками попадут в 🔁 Повторение.";
+      tg.MainButton.setParams({ text: "Сохранить результат", is_visible: true, is_active: true });
+    } else {
+      $("rNote").textContent = "Открой игру из бота, чтобы результат сохранился.";
+    }
+    haptic("warning");
+    show("result");
+  }
+
+  function saveAndClose() {
+    const payload = {
+      g: "sprint",
+      r: session.rounds,
+      c: session.correct,
+      w: session.wrong,
+      b: session.best,
+      m: session.mistakes.slice(0, 30),
+    };
+    try { tg.disableClosingConfirmation(); } catch (e) {}
+    tg.sendData(JSON.stringify(payload));   // бот получит web_app_data, окно закроется
+  }
+
+  // ---------- Управление ----------
+  $("btnStart").onclick = startRound;
+  $("btnAgain").onclick = startRound;
+  $("btnYes").onclick = () => answer(true);
+  $("btnNo").onclick = () => answer(false);
+  if (tg) tg.MainButton.onClick(saveAndClose);
+
+  document.addEventListener("keydown", (e) => {
+    if (!$("game").classList.contains("on")) return;
+    if (e.key === "ArrowRight") answer(true);
+    if (e.key === "ArrowLeft") answer(false);
+  });
+
+  // Свайп карточки: вправо — верно, влево — неверно
+  const card = $("card");
+  let x0 = null, dx = 0;
+  card.addEventListener("pointerdown", (e) => {
+    if (locked) return;
+    x0 = e.clientX; dx = 0;
+    card.classList.add("dragging");
+    card.setPointerCapture(e.pointerId);
+  });
+  card.addEventListener("pointermove", (e) => {
+    if (x0 === null) return;
+    dx = e.clientX - x0;
+    card.style.transform = `translateX(${dx}px) rotate(${dx / 25}deg)`;
+    $("hintR").style.opacity = Math.max(0, Math.min(1, dx / 80));
+    $("hintL").style.opacity = Math.max(0, Math.min(1, -dx / 80));
+  });
+  const release = () => {
+    if (x0 === null) return;
+    x0 = null;
+    card.classList.remove("dragging");
+    $("hintR").style.opacity = 0; $("hintL").style.opacity = 0;
+    if (Math.abs(dx) > 80) answer(dx > 0);
+    else card.style.transform = "";
+  };
+  card.addEventListener("pointerup", release);
+  card.addEventListener("pointercancel", release);
+})();
+</script>
+</body>
+</html>
