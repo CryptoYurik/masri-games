@@ -26,7 +26,7 @@ body {
 .screen.on { display: flex; }
 button { font: inherit; border: 0; cursor: pointer; color: inherit; }
 button:focus-visible { outline: 3px solid var(--faience); outline-offset: 3px; }
-.ar { font-family: "Amiri", "Noto Naskh Arabic", serif; direction: rtl; line-height: 1.35; }
+.ar { font-family: "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif; direction: rtl; line-height: 1.7; font-weight: 500; }
 
 /* Старт */
 .start { justify-content: center; align-items: center; text-align: center; gap: 10px; }
