@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>🌠 Падающие слова — Masri</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="games.css">
+<style>
+  #game { padding-top: 14px; }
+  .lives { font-size: 22px; letter-spacing: 2px; }
+  .lives .lost { opacity: .2; }
+  .sky {
+    flex: 1; position: relative; min-height: 0; overflow: hidden;
+    border-bottom: 3px solid color-mix(in srgb, var(--no) 55%, transparent);
+    margin-bottom: 14px;
+  }
+  .drop {
+    position: absolute; top: 0; left: 50%; width: 72%;
+    background: var(--surface); border-radius: var(--radius); padding: 14px 16px; text-align: center;
+    border: 2px solid transparent; will-change: transform;
+  }
+  .drop .ar { font-size: clamp(32px, 10vw, 46px); margin: 0; }
+  .drop small { color: var(--muted); font-size: 14px; }
+  .drop.ok { border-color: var(--yes); }
+  .drop.bad { border-color: var(--no); }
+  .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .opts button {
+    min-height: 64px; padding: 10px; border-radius: 16px; background: var(--surface);
+    font-size: 15px; line-height: 1.25; border: 2px solid transparent;
+  }
+  .opts button.ok { border-color: var(--yes); background: color-mix(in srgb, var(--yes) 15%, var(--surface)); }
+  .opts button.bad { border-color: var(--no); background: color-mix(in srgb, var(--no) 12%, var(--surface)); }
+</style>
+</head>
+<body>
+
+<section id="start" class="screen start on">
+  <p class="ar" aria-hidden="true">بسرعة</p>
+  <h1>Падающие слова</h1>
+  <p>Выбери перевод, пока слово не упало. С каждым уровнем слова падают быстрее.</p>
+  <div class="rules">
+    <div><b>3</b>жизни</div>
+    <div><b>4</b>варианта</div>
+    <div><b id="poolSize">…</b>слов</div>
+  </div>
+  <button class="primary" id="btnStart" disabled>Начать</button>
+  <div class="loadmsg" id="loadmsg">Загружаю слова…</div>
+</section>
+
+<section id="game" class="screen">
+  <div class="hud">
+    <div>
+      <div class="score" id="score">0</div>
+      <div class="sub" id="lvl">Уровень 1</div>
+    </div>
+    <div class="lives" id="lives" aria-label="Жизни"><span>❤️</span><span>❤️</span><span>❤️</span></div>
+  </div>
+  <div class="sky" id="sky">
+    <div class="drop" id="drop"><p class="ar" id="dAr"></p><small id="dTr"></small></div>
+  </div>
+  <div class="opts" id="opts"></div>
+</section>
+
+<section id="result" class="screen result">
+  <h2>Очки за игру</h2>
+  <div class="final" id="rScore">0</div>
+  <div class="record" id="rRecord"></div>
+  <div class="stats">
+    <div><b id="rOk">0</b><small>верно</small></div>
+    <div><b id="rBad">0</b><small>ошибок</small></div>
+    <div><b id="rLvl">1</b><small>уровень</small></div>
+  </div>
+  <h3>Работа над ошибками</h3>
+  <div id="rList"></div>
+  <div class="row"><button class="primary" id="btnAgain">Ещё раз</button></div>
+  <p class="note" id="rNote"></p>
+</section>
+
+<script src="games.js"></script>
+<script>
+(() => {
+  const M = window.Masri, $ = M.$;
+  const LIVES = 3, PER_LEVEL = 5;
+  let W, st, q, raf, locked;
+  M.newSession("fall");
+
+  M.loadWords().then(w => {
+    W = w;
+    $("poolSize").textContent = W.pool.length;
+    $("loadmsg").textContent = M.level === "все" ? "" : "Уровень слов: " + M.level;
+    $("btnStart").disabled = false;
+  }).catch(() => { $("loadmsg").textContent = "Не удалось загрузить слова. Закрой игру и открой снова."; });
+
+  const level = () => 1 + Math.floor(st.ok / PER_LEVEL);
+  const duration = () => Math.max(2.4, 7 - (level() - 1) * 0.55) * 1000;  // мс на падение
+
+  function next() {
+    if (st.lives <= 0) return finish();
+    let w;
+    do { w = M.pick(W.pool); } while (q && W.pool.length > 1 && w[0] === q.w[0]);
+    const options = M.shuffle([w[3], ...M.wrongTranslations(W, w, 3)]);
+    q = { w, dur: duration(), t0: performance.now() };
+
+    const drop = $("drop");
+    drop.classList.remove("ok", "bad");
+    $("dAr").textContent = w[1];
+    $("dTr").textContent = w[2];
+    q.x = -50 + (Math.random() * 30 - 15);   // небольшое смещение по горизонтали, в процентах
+
+    const box = $("opts");
+    box.innerHTML = "";
+    for (const text of options) {
+      const b = document.createElement("button");
+      b.textContent = text;
+      b.onclick = () => answer(b, text);
+      box.appendChild(b);
+    }
+    locked = false;
+    raf = requestAnimationFrame(fall);
+  }
+
+  function fall(now) {
+    if (locked) return;
+    const p = Math.min(1, (now - q.t0) / q.dur);
+    const maxY = $("sky").clientHeight - $("drop").offsetHeight;
+    $("drop").style.transform = `translate(${q.x}%, ${p * maxY}px)`;
+    if (p >= 1) return miss(null);
+    raf = requestAnimationFrame(fall);
+  }
+
+  function answer(btn, text) {
+    if (locked) return;
+    locked = true;
+    cancelAnimationFrame(raf);
+    if (text === q.w[3]) {
+      const left = 1 - (performance.now() - q.t0) / q.dur;
+      const before = level();
+      st.ok++;
+      st.score += 10 * before + Math.round(left * 10);   // быстрее ответил — больше бонус
+      btn.classList.add("ok"); $("drop").classList.add("ok");
+      M.haptic("success");
+      renderHud();
+      setTimeout(next, 280);
+    } else {
+      btn.classList.add("bad");
+      miss(btn);
+    }
+  }
+
+  // Ошибка или слово упало: минус жизнь, показываем правильный ответ
+  function miss(btn) {
+    locked = true;
+    cancelAnimationFrame(raf);
+    st.bad++; st.lives--;
+    if (!st.mistakes.some(m => m[0] === q.w[0])) st.mistakes.push(q.w);
+    $("drop").classList.add("bad");   // без тряски: transform карточки занят падением
+    for (const b of $("opts").children) if (b.textContent === q.w[3]) b.classList.add("ok");
+    M.haptic("error");
+    renderHud();
+    setTimeout(next, 1100);
+  }
+
+  function renderHud() {
+    $("score").textContent = st.score;
+    $("lvl").textContent = "Уровень " + level();
+    [...$("lives").children].forEach((h, i) => h.classList.toggle("lost", i >= st.lives));
+  }
+
+  function start() {
+    st = { score: 0, ok: 0, bad: 0, lives: LIVES, mistakes: [] };
+    q = null;
+    M.show("game");
+    renderHud();
+    M.roundStarted();
+    requestAnimationFrame(next);   // после показа экрана, чтобы размеры неба уже были известны
+  }
+
+  function finish() {
+    locked = true;
+    const { best, isRecord } = M.roundFinished({ score: st.score, ok: st.ok, bad: st.bad, mistakes: st.mistakes.map(w => w[0]) });
+    $("rScore").textContent = st.score;
+    $("rRecord").textContent = isRecord ? "Новый рекорд!" : (best ? "Рекорд: " + best : "");
+    $("rOk").textContent = st.ok;
+    $("rBad").textContent = st.bad;
+    $("rLvl").textContent = level();
+    M.renderWordMistakes($("rList"), st.mistakes);
+    M.offerSave($("rNote"), "Нажми «Сохранить результат», чтобы получить XP. Слова с ошибками попадут в 🔁 Повторение.");
+    M.haptic("warning");
+    M.show("result");
+  }
+
+  $("btnStart").onclick = start;
+  $("btnAgain").onclick = start;
+})();
+</script>
+</body>
+</html>

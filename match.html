@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>🧩 Найди пару — Masri</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="games.css">
+<style>
+  #game { padding-top: 14px; }
+  .board { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: center; min-height: 0; }
+  .col { display: flex; flex-direction: column; gap: 8px; }
+  .tile {
+    min-height: 58px; padding: 8px 10px; border-radius: 16px; background: var(--surface);
+    border: 2px solid transparent; display: flex; flex-direction: column; justify-content: center;
+    transition: opacity .25s, border-color .12s, background-color .12s;
+  }
+  .tile.ar-tile { align-items: flex-end; }
+  .tile.ar-tile .ar { font-size: 24px; }
+  .tile.ar-tile small { color: var(--muted); font-size: 12px; }
+  .tile.ru-tile { font-size: 15px; line-height: 1.25; text-align: left; }
+  .tile.sel { border-color: var(--faience); background: color-mix(in srgb, var(--faience) 10%, var(--surface)); }
+  .tile.ok { border-color: var(--yes); background: color-mix(in srgb, var(--yes) 15%, var(--surface)); }
+  .tile.bad { border-color: var(--no); }
+  .tile.gone { opacity: 0; pointer-events: none; }
+  .tip { text-align: center; color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+
+<section id="start" class="screen start on">
+  <p class="ar" aria-hidden="true">إيه ده؟</p>
+  <h1>Найди пару</h1>
+  <p>Соедини арабское слово с его переводом. Убрал всё поле — получил бонус и 5 секунд.</p>
+  <div class="rules">
+    <div><b>90</b>секунд</div>
+    <div><b>6</b>пар на поле</div>
+    <div><b id="poolSize">…</b>слов</div>
+  </div>
+  <button class="primary" id="btnStart" disabled>Начать</button>
+  <div class="loadmsg" id="loadmsg">Загружаю слова…</div>
+</section>
+
+<section id="game" class="screen">
+  <div class="bar" id="bar"><i id="barFill"></i></div>
+  <div class="hud">
+    <div>
+      <div class="score" id="score">0</div>
+      <div class="sub" id="time">90 с</div>
+    </div>
+    <div class="sub" id="boards">Поле 1</div>
+  </div>
+  <div class="board">
+    <div class="col" id="colAr"></div>
+    <div class="col" id="colRu"></div>
+  </div>
+  <p class="tip">Нажми слово слева, затем его перевод справа</p>
+</section>
+
+<section id="result" class="screen result">
+  <h2>Очки за раунд</h2>
+  <div class="final" id="rScore">0</div>
+  <div class="record" id="rRecord"></div>
+  <div class="stats">
+    <div><b id="rOk">0</b><small>пар</small></div>
+    <div><b id="rBad">0</b><small>ошибок</small></div>
+    <div><b id="rBoards">0</b><small>полей убрано</small></div>
+  </div>
+  <h3>Работа над ошибками</h3>
+  <div id="rList"></div>
+  <div class="row"><button class="primary" id="btnAgain">Ещё раунд</button></div>
+  <p class="note" id="rNote"></p>
+</section>
+
+<script src="games.js"></script>
+<script>
+(() => {
+  const M = window.Masri, $ = M.$;
+  const ROUND = 90, PAIRS = 6;
+  let W, st, timer, selAr = null, selRu = null, busy = false;
+  M.newSession("match");
+
+  M.loadWords().then(w => {
+    W = w;
+    $("poolSize").textContent = W.pool.length;
+    $("loadmsg").textContent = M.level === "все" ? "" : "Уровень: " + M.level;
+    $("btnStart").disabled = false;
+  }).catch(() => { $("loadmsg").textContent = "Не удалось загрузить слова. Закрой игру и открой снова."; });
+
+  // 6 слов без двусмысленности: разные арабские слова и переводы, и ни один перевод не подходит к другому слову поля
+  function pickBoard() {
+    const chosen = [], usedAr = new Set(), usedRu = new Set();
+    for (const w of M.shuffle(W.pool)) {
+      if (chosen.length >= PAIRS) break;
+      const a = M.normAr(w[1]), r = M.normRu(w[3]);
+      if (usedAr.has(a) || usedRu.has(r)) continue;
+      if (chosen.some(c => W.transByArabic[M.normAr(c[1])].has(r) || W.transByArabic[a].has(M.normRu(c[3])))) continue;
+      chosen.push(w); usedAr.add(a); usedRu.add(r);
+    }
+    return chosen;
+  }
+
+  function newBoard() {
+    const words = pickBoard();
+    st.left = words.length;
+    const colAr = $("colAr"), colRu = $("colRu");
+    colAr.innerHTML = ""; colRu.innerHTML = "";
+    for (const w of words) {
+      const b = document.createElement("button");
+      b.className = "tile ar-tile";
+      b.innerHTML = '<span class="ar"></span><small></small>';
+      b.children[0].textContent = w[1];
+      b.children[1].textContent = w[2];
+      b.onclick = () => choose("ar", b, w);
+      colAr.appendChild(b);
+    }
+    for (const w of M.shuffle(words)) {
+      const b = document.createElement("button");
+      b.className = "tile ru-tile";
+      b.textContent = w[3];
+      b.onclick = () => choose("ru", b, w);
+      colRu.appendChild(b);
+    }
+    $("boards").textContent = "Поле " + (st.boards + 1);
+  }
+
+  function choose(side, el, w) {
+    if (busy) return;
+    M.tap();
+    const cur = side === "ar" ? selAr : selRu;
+    if (cur) cur.el.classList.remove("sel");
+    if (cur && cur.el === el) { side === "ar" ? selAr = null : selRu = null; return; }
+    el.classList.add("sel");
+    if (side === "ar") selAr = { el, w }; else selRu = { el, w };
+    if (selAr && selRu) check();
+  }
+
+  function check() {
+    const a = selAr, r = selRu;
+    selAr = selRu = null;
+    a.el.classList.remove("sel"); r.el.classList.remove("sel");
+    if (a.w[0] === r.w[0]) {
+      st.ok++; st.score += 10;
+      a.el.classList.add("ok"); r.el.classList.add("ok");
+      M.haptic("success");
+      setTimeout(() => { a.el.classList.add("gone"); r.el.classList.add("gone"); }, 220);
+      if (--st.left === 0) {
+        st.boards++; st.score += 20; timer.add(5);
+        busy = true;
+        setTimeout(() => { busy = false; newBoard(); }, 450);
+      }
+    } else {
+      st.bad++;
+      if (!st.mistakes.some(m => m[0] === a.w[0])) st.mistakes.push(a.w);
+      for (const t of [a.el, r.el]) {
+        t.classList.add("bad", "shake");
+        setTimeout(() => t.classList.remove("bad", "shake"), 350);
+      }
+      M.haptic("error");
+    }
+    $("score").textContent = st.score;
+  }
+
+  function start() {
+    st = { score: 0, ok: 0, bad: 0, boards: 0, left: 0, mistakes: [] };
+    selAr = selRu = null; busy = false;
+    $("score").textContent = 0;
+    M.show("game");
+    newBoard();
+    M.roundStarted();
+    timer = M.timer(ROUND, $("bar"), $("barFill"), $("time"), finish);
+  }
+
+  function finish() {
+    busy = true;
+    const { best, isRecord } = M.roundFinished({ score: st.score, ok: st.ok, bad: st.bad, mistakes: st.mistakes.map(w => w[0]) });
+    $("rScore").textContent = st.score;
+    $("rRecord").textContent = isRecord ? "Новый рекорд!" : (best ? "Рекорд: " + best : "");
+    $("rOk").textContent = st.ok;
+    $("rBad").textContent = st.bad;
+    $("rBoards").textContent = st.boards;
+    M.renderWordMistakes($("rList"), st.mistakes);
+    M.offerSave($("rNote"), "Нажми «Сохранить результат», чтобы получить XP. Слова с ошибками попадут в 🔁 Повторение.");
+    M.haptic("warning");
+    M.show("result");
+  }
+
+  $("btnStart").onclick = start;
+  $("btnAgain").onclick = start;
+})();
+</script>
+</body>
+</html>

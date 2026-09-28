@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>🔤 Собери фразу — Masri</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="games.css">
+<style>
+  #game { padding-top: 14px; overflow-y: auto; }
+  .topic { color: var(--muted); font-size: 14px; margin-top: 6px; }
+  .task { font-size: 22px; font-weight: 500; line-height: 1.35; margin: 6px 0 4px; }
+  .hintline { min-height: 1.4em; color: var(--muted); font-size: 15px; }
+  .answer {
+    direction: rtl; display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start;
+    min-height: 124px; padding: 14px; margin: 14px 0; border-radius: var(--radius);
+    border: 2px dashed color-mix(in srgb, var(--muted) 45%, transparent);
+    transition: border-color .15s;
+  }
+  .answer.ok { border: 2px solid var(--yes); }
+  .answer.bad { border: 2px solid var(--no); }
+  .pool { direction: rtl; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; min-height: 60px; }
+  .tok {
+    font-family: "Amiri", "Noto Naskh Arabic", serif; font-size: 26px; line-height: 1.3;
+    padding: 6px 14px; border-radius: 14px; background: var(--surface);
+    border-bottom: 3px solid color-mix(in srgb, var(--muted) 30%, transparent);
+  }
+  .tok:active { transform: translateY(1px); }
+  .answer .tok { background: color-mix(in srgb, var(--faience) 12%, var(--surface)); }
+  .fixbox { display: none; background: var(--surface); border-radius: 16px; padding: 12px 16px; margin-top: 12px; }
+  .fixbox.on { display: block; }
+  .fixbox .ar { font-size: 28px; text-align: right; }
+  .fixbox small { color: var(--muted); }
+  .controls { display: flex; gap: 10px; margin-top: auto; padding-top: 16px; }
+  .controls button { flex: 1; }
+</style>
+</head>
+<body>
+
+<section id="start" class="screen start on">
+  <p class="ar" aria-hidden="true">كلمة كلمة</p>
+  <h1>Собери фразу</h1>
+  <p>Фразы из диалогов бота. Нажимай слова по порядку — арабский читается справа налево.</p>
+  <div class="rules">
+    <div><b>8</b>фраз за раунд</div>
+    <div><b>5</b>очков за слово</div>
+    <div><b id="poolSize">…</b>фраз</div>
+  </div>
+  <button class="primary" id="btnStart" disabled>Начать</button>
+  <div class="loadmsg" id="loadmsg">Загружаю фразы…</div>
+</section>
+
+<section id="game" class="screen">
+  <div class="hud">
+    <div class="score" id="score">0</div>
+    <div class="sub" id="progress">1 из 8</div>
+  </div>
+  <div class="topic" id="topic"></div>
+  <div class="task" id="task"></div>
+  <div class="hintline" id="hintline"></div>
+  <div class="answer" id="answer" aria-label="Собранная фраза"></div>
+  <div class="pool" id="pool"></div>
+  <div class="fixbox" id="fixbox">
+    <small>Правильно:</small>
+    <div class="ar" id="fixAr"></div>
+    <small id="fixTr"></small>
+  </div>
+  <div class="controls">
+    <button class="ghost" id="btnHint">Подсказка</button>
+    <button class="ghost" id="btnReset">Сбросить</button>
+    <button class="primary" id="btnNext" hidden>Дальше</button>
+  </div>
+</section>
+
+<section id="result" class="screen result">
+  <h2>Очки за раунд</h2>
+  <div class="final" id="rScore">0</div>
+  <div class="record" id="rRecord"></div>
+  <div class="stats">
+    <div><b id="rOk">0</b><small>собрано</small></div>
+    <div><b id="rBad">0</b><small>ошибок</small></div>
+    <div><b id="rHints">0</b><small>подсказок</small></div>
+  </div>
+  <h3>Работа над ошибками</h3>
+  <div id="rList"></div>
+  <div class="row"><button class="primary" id="btnAgain">Ещё раунд</button></div>
+  <p class="note" id="rNote"></p>
+</section>
+
+<script src="games.js"></script>
+<script>
+(() => {
+  const M = window.Masri, $ = M.$;
+  const PER_ROUND = 8, POINTS_PER_WORD = 5;
+  // Строка dialogues.json: [тема, арабский, транслит, перевод]
+  let phrases = [], queue = [], st, cur, locked;
+  M.newSession("build");
+
+  M.loadJSON("dialogues.json").then(list => {
+    phrases = list;
+    $("poolSize").textContent = phrases.length;
+    $("loadmsg").textContent = "";
+    $("btnStart").disabled = false;
+  }).catch(() => { $("loadmsg").textContent = "Не удалось загрузить фразы. Закрой игру и открой снова."; });
+
+  function nextPhrase() {
+    if (!queue.length) queue = M.shuffle(phrases);   // без повторов, пока не пройдены все
+    return queue.pop();
+  }
+
+  function show() {
+    const p = nextPhrase();
+    const tokens = p[1].split(/\s+/).filter(Boolean);
+    let mixed = M.shuffle(tokens);
+    for (let i = 0; i < 5 && mixed.join(" ") === tokens.join(" "); i++) mixed = M.shuffle(tokens);
+    cur = { p, tokens, hint: false };
+    locked = false;
+
+    $("progress").textContent = `${st.n + 1} из ${PER_ROUND}`;
+    $("topic").textContent = p[0];
+    $("task").textContent = p[3];
+    $("hintline").textContent = "";
+    $("answer").className = "answer";
+    $("answer").innerHTML = "";
+    $("fixbox").classList.remove("on");
+    $("btnNext").hidden = true;
+    $("btnHint").hidden = false; $("btnReset").hidden = false;
+
+    const pool = $("pool");
+    pool.innerHTML = "";
+    for (const t of mixed) pool.appendChild(makeToken(t));
+  }
+
+  function makeToken(text) {
+    const b = document.createElement("button");
+    b.className = "tok";
+    b.textContent = text;
+    b.onclick = () => {
+      if (locked) return;
+      M.tap();
+      const target = b.parentElement.id === "pool" ? $("answer") : $("pool");
+      target.appendChild(b);
+      if (!$("pool").children.length) check();
+    };
+    return b;
+  }
+
+  function check() {
+    locked = true;
+    const built = [...$("answer").children].map(b => b.textContent).join(" ");
+    const right = cur.tokens.join(" ");
+    $("btnHint").hidden = true; $("btnReset").hidden = true;
+    if (built === right) {
+      const pts = cur.tokens.length * POINTS_PER_WORD;
+      st.score += cur.hint ? Math.ceil(pts / 2) : pts;   // с подсказкой — половина очков
+      st.ok++;
+      $("answer").classList.add("ok");
+      $("hintline").textContent = cur.p[2];
+      M.haptic("success");
+    } else {
+      st.bad++;
+      st.mistakes.push(cur.p);
+      $("answer").classList.add("bad", "shake");
+      $("fixAr").textContent = cur.p[1];
+      $("fixTr").textContent = cur.p[2];
+      $("fixbox").classList.add("on");
+      M.haptic("error");
+    }
+    $("score").textContent = st.score;
+    st.n++;
+    $("btnNext").textContent = st.n >= PER_ROUND ? "Итог" : "Дальше";
+    $("btnNext").hidden = false;
+  }
+
+  $("btnHint").onclick = () => {
+    if (locked) return;
+    cur.hint = true; st.hints++;
+    $("hintline").textContent = cur.p[2];
+  };
+  $("btnReset").onclick = () => {
+    if (locked) return;
+    for (const b of [...$("answer").children]) $("pool").appendChild(b);
+  };
+  $("btnNext").onclick = () => (st.n >= PER_ROUND ? finish() : show());
+
+  function start() {
+    st = { score: 0, ok: 0, bad: 0, n: 0, hints: 0, mistakes: [] };
+    $("score").textContent = 0;
+    M.show("game");
+    M.roundStarted();
+    show();
+  }
+
+  function finish() {
+    const { best, isRecord } = M.roundFinished({ score: st.score, ok: st.ok, bad: st.bad, mistakes: [] });
+    $("rScore").textContent = st.score;
+    $("rRecord").textContent = isRecord ? "Новый рекорд!" : (best ? "Рекорд: " + best : "");
+    $("rOk").textContent = st.ok;
+    $("rBad").textContent = st.bad;
+    $("rHints").textContent = st.hints;
+    // Ошибки во фразах: [тема, арабский, транслит, перевод] -> формат карточки слова
+    M.renderWordMistakes($("rList"), st.mistakes.map(p => [0, p[1], p[2], p[3]]));
+    M.offerSave($("rNote"), "Нажми «Сохранить результат», чтобы получить XP.");
+    M.haptic("warning");
+    M.show("result");
+  }
+
+  $("btnStart").onclick = start;
+  $("btnAgain").onclick = start;
+})();
+</script>
+</body>
+</html>
