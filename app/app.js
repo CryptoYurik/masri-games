@@ -223,14 +223,13 @@ SCREENS.welcome = {
   <div class="screen dark pattern welcome">
     <div class="glow m-glow"></div>
     <span class="ar m-rise" lang="ar">أهلاً وسهلاً</span>
-    <div class="m-pop" style="animation-delay:.1s"><div class="m-bob"><img class="mascot m-wave" src="${A}mascot.webp" alt="Масри, талисман приложения, машет рукой"></div></div>
+    <div class="mascot-wrap"><div class="m-pop" style="animation-delay:.1s"><div class="m-bob"><img class="mascot m-wave" src="${A}mascot.webp" alt="Масри, талисман приложения, машет рукой"></div></div></div>
     <div class="m-rise" style="animation-delay:.35s"><h1>Учим египетский арабский</h1><p>Легко и с удовольствием, на живом диалекте</p></div>
-    <div class="stack" style="width:100%">
+    <div class="stack feats" style="width:100%;gap:8px">
       ${[['sound', 'Слова и выражения с озвучкой'], ['chat', 'Диалоги на живом египетском'], ['game', 'Квизы и повторение для прогресса']].map(([i, t], k) =>
         `<div class="feat m-rise" style="animation-delay:${0.55 + k * 0.1}s"><span class="ico">${ic(i)}</span>${t}</div>`).join('')}
     </div>
-    <div class="grow"></div>
-    <button class="btn gold m-rise" style="width:100%;animation-delay:.9s" data-act="startApp">Начать ${ic('next')}</button>
+    <button class="btn gold cta m-rise" style="animation-delay:.9s" data-act="startApp">Начать ${ic('next')}</button>
   </div>`,
 };
 ACTIONS.startApp = () => { try { localStorage.setItem('masri_welcomed', '1'); } catch (e) {} haptic.ok(); home(); };
@@ -279,7 +278,7 @@ SCREENS.home = {
           ${tile('materials', 'doc', 'terra', 'Материалы', 'Грамматика')}
         </div>
         <div class="ai-row">
-          ${S.aiEnabled ? `<button class="ai-tile pattern" data-act="go" data-to="ai"><img src="${A}mascot_head.webp" alt=""><span><b>ИИ ассистент</b><small>Спроси Масри что угодно</small></span></button>` : ''}
+          ${S.aiEnabled ? `<button class="ai-tile pattern" data-act="go" data-to="ai"><img src="${A}mascot.webp" alt=""><span><b>ИИ ассистент</b><small>Спроси Масри что угодно</small></span></button>` : ''}
           <button class="heart-btn" data-act="donate" aria-label="Поддержать проект" ${S.aiEnabled ? '' : 'style="flex-grow:1;width:auto;min-height:60px"'}>${ic('heart')}</button>
         </div>
       </div>
@@ -571,7 +570,7 @@ SCREENS.quiz = {
       </header>
       <div class="pad stack" style="margin-top:20px" id="qOptions"></div>
       <div class="grow"></div>
-      <div class="pad stack" id="qBottom" style="margin-top:14px"></div>
+      <div class="quiz-next" id="qBottom"></div>
     </div>`,
   mount: (p) => {
     p._st = { n: 0, ok: 0, bad: 0, xp: 0, asked: [], q: null, locked: false, done: false, mistakes: 0 };
@@ -612,12 +611,12 @@ async function nextQuestion(p) {
   if (!pr) return;
   pr.innerHTML = `
     <div class="txt m-rise">
-      <span class="k">${rev ? 'Как сказать по-египетски?' : 'Выбери перевод'}</span>
+      <span class="k" id="qLabel">${rev ? 'Как сказать по-египетски?' : 'Выбери перевод'}</span>
       ${rev ? `<span class="ru">${esc(q.prompt.ru)}</span>`
             : `<span class="ar" lang="ar">${esc(q.prompt.ar)}</span><span class="tr">${esc(q.prompt.tr)}</span>`}
     </div>
     ${!rev && q.prompt.has_audio ? `<button class="round-play" style="background:rgba(217,174,91,.18)" data-act="play" data-idx="${q.idx}" aria-label="Послушать">${ic('sound')}</button>` : ''}
-    <img class="sticker m-bob" src="${STICK.podumai}" alt="">`;
+    <img class="sticker" id="qSticker" src="${STICK.podumai}" alt="Масри: «Подумай!»">`;
   if (!p.timed) {
     document.getElementById('qStep').textContent = `${st.n}/${QUIZ_LENGTH}`;
     document.getElementById('qBar').style.width = `${((st.n - 1) / QUIZ_LENGTH) * 100}%`;
@@ -656,16 +655,21 @@ ACTIONS.answer = async (d) => {
   const xpEl = document.getElementById('qXp');
   xpEl.innerHTML = `+${st.xp} XP${r.correct ? `<span class="xp-float m-xp">+${r.xp_gained}</span>` : ''}`;
 
-  if (p.timed) { setTimeout(() => nextQuestion(p), r.correct ? 450 : 900); return; }
-
+  // Реакция Масри — прямо в шапке, на месте «Подумай!», чтобы всё помещалось на экране
   const g = GOOD[(st.ok - 1 + GOOD.length) % GOOD.length];
   const [stick, alt, ar, ru] = r.correct
-    ? [g[0], g[1], 'برافو عليك!', 'Браво! Так держать.']
-    : ['nepravilno', 'Неправильно!', 'معلش!', 'Ничего страшного — слово уйдёт в повторение.'];
+    ? [g[0], g[1], 'برافو عليك!', 'Браво!']
+    : ['nepravilno', 'Неправильно!', 'معلش!', 'Слово уйдёт в повторение'];
+  const sticker = document.getElementById('qSticker');
+  if (sticker) { sticker.src = STICK[stick]; sticker.alt = 'Масри: ' + alt; sticker.classList.remove('m-pop'); void sticker.offsetWidth; sticker.classList.add('m-pop'); }
+  const label = document.getElementById('qLabel');
+  if (label) label.innerHTML = `<span class="ar" lang="ar">${ar}</span> ${ru}`;
+  if (label) label.classList.toggle('bad', !r.correct);
+
+  if (p.timed) { setTimeout(() => nextQuestion(p), r.correct ? 450 : 900); return; }
+
   document.getElementById('qBottom').innerHTML = `
-    <div class="feedback m-pop"><img src="${STICK[stick]}" alt="Масри: ${esc(alt)}">
-      <div class="bubble"><span class="ar" lang="ar" style="color:${r.correct ? 'var(--night)' : 'var(--terra)'}">${ar}</span><span>${ru}</span></div></div>
-    <button class="btn night m-rise" style="animation-delay:.2s" data-act="quizNext">${st.n >= QUIZ_LENGTH ? 'Посмотреть итог' : 'Следующий вопрос'}</button>`;
+    <button class="btn night m-rise" data-act="quizNext">${st.n >= QUIZ_LENGTH ? 'Посмотреть итог' : 'Следующий вопрос'} ${ic('next')}</button>`;
 };
 ACTIONS.quizNext = () => { const cur = stack[stack.length - 1]; if (cur.name === 'quiz') nextQuestion(cur.p); };
 
@@ -838,8 +842,8 @@ SCREENS.ai = {
 };
 function drawAi(typing) {
   const box = document.getElementById('aiChat'); if (!box) return;
-  const intro = `<div class="ai-intro m-rise"><img src="${A}mascot_head.webp" alt="Масри"><div class="ai-msg">Ахлан! Я Масри. Спроси, как сказать что-нибудь по-египетски, или попроси объяснить правило.</div></div>`;
-  const sugg = aiMessages.length ? '' : `<div class="suggest m-rise" style="animation-delay:.2s">${['Как сказать «сколько стоит?»', 'Чем отличается إزيك от إزيِك?', 'Как вежливо отказаться?'].map((s) => `<button data-act="aiSuggest" data-t="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;
+  const intro = `<div class="ai-intro m-rise"><img src="${A}mascot.webp" alt="Масри"><div class="ai-msg">Ахлан! Я Масри. Спроси, как сказать что-нибудь по-египетски, или попроси объяснить правило.</div></div>`;
+  const sugg = aiMessages.length ? '' : `<div class="suggest m-rise" style="animation-delay:.2s">${['Как сказать «сколько стоит?»', 'Как спросить «как дела?» у девушки?', 'Как вежливо отказаться?'].map((s) => `<button data-act="aiSuggest" data-t="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;
   box.innerHTML = intro + sugg + aiMessages.map((m) => `<div class="ai-msg ${m.me ? 'me' : ''}">${m.me ? esc(m.text).replace(/\n/g, '<br>') : aiText(m.text)}</div>`).join('')
     + (typing ? '<div class="ai-msg"><span class="typing"><i></i><i></i><i></i></span></div>' : '');
   box.scrollTop = box.scrollHeight;
